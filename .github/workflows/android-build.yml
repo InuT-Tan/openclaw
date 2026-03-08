@@ -18,6 +18,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,9 +56,36 @@ jobs:
         working-directory: apps/android
         run: ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: openclaw-android-debug
           path: apps/android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+      - name: Decode release keystore
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > /tmp/openclaw-release.jks
+
+      - name: Build release APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: apps/android
+        run: |
+          ./gradlew --no-daemon :app:assembleRelease \
+            -POPENCLAW_ANDROID_STORE_FILE=/tmp/openclaw-release.jks \
+            -POPENCLAW_ANDROID_STORE_PASSWORD="${{ secrets.ANDROID_STORE_PASSWORD }}" \
+            -POPENCLAW_ANDROID_KEY_ALIAS="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -POPENCLAW_ANDROID_KEY_PASSWORD="${{ secrets.ANDROID_KEY_PASSWORD }}"
+
+      - name: Upload release APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-android-release
+          path: apps/android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+      - name: Clean up release keystore
+        if: always()
+        run: rm -f /tmp/openclaw-release.jks
